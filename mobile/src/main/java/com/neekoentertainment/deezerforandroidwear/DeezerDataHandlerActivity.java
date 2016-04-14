@@ -2,11 +2,11 @@ package com.neekoentertainment.deezerforandroidwear;
 
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.view.View;
 
 import com.deezer.sdk.model.Album;
 import com.deezer.sdk.model.PaginatedList;
@@ -26,8 +26,10 @@ import com.google.android.gms.wearable.Wearable;
 import com.neekoentertainment.deezerforandroidwear.listener.ListenerService;
 import com.neekoentertainment.deezerforandroidwear.tools.JSONTools;
 import com.neekoentertainment.deezerforandroidwear.tools.ServicesAuthentication;
-import com.squareup.picasso.Picasso;
-import com.squareup.picasso.Target;
+import com.nostra13.universalimageloader.core.ImageLoader;
+import com.nostra13.universalimageloader.core.ImageLoaderConfiguration;
+import com.nostra13.universalimageloader.core.assist.FailReason;
+import com.nostra13.universalimageloader.core.listener.ImageLoadingListener;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -45,13 +47,13 @@ import java.util.concurrent.TimeUnit;
 public class DeezerDataHandlerActivity extends AppCompatActivity {
 
     public static final String DATA_ITEM_PATH = "/deezer_data";
-    public static final String COVER_ITEM_PATH = "/deezer_cover";
     public static final String DEEZER_JSON_ARRAY = "data";
     public static final String DEEZER_JSON_ALBUM_SMALL_COVER = "cover_small";
-    public static final String DEEZER_JSON_ALBUM_ID = "id";
     public static final String DEEZER_DISCONNECTED_MESSAGE = "deezer_disconnected";
 
     private GoogleApiClient mGoogleApiClient;
+
+    private ImageLoader imageLoader;
 
     private DeezerConnect mDeezerConnect;
 
@@ -84,6 +86,8 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
 
     private void init(final String requestedContent) {
         mAlbumList = new ArrayList<>();
+        imageLoader = ImageLoader.getInstance();
+        imageLoader.init(ImageLoaderConfiguration.createDefault(getApplicationContext()));
         mGoogleApiClient = ServicesAuthentication.getGoogleApiClient(this);
         ServicesAuthentication.DeezerConnection mCallback = new ServicesAuthentication.DeezerConnection() {
             @Override
@@ -178,38 +182,58 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
                 }
             });
             final PutDataMapRequest dataMapRequest = PutDataMapRequest.create(DATA_ITEM_PATH);
-            for (Album album : albums) {
-                final DataMap dataMap = dataMapRequest.getDataMap();
-                dataMap.putLong("timestamp", System.currentTimeMillis());
-                dataMap.putAsset(DEEZER_JSON_ARRAY, getAssetFromJsonObject(JSONTools.generateAlbumJson(album.toJson())));
-                Target target = new Target() {
+            for (final Album album : albums) {
+                OnBitmapLoaded onBitmapLoaded = new OnBitmapLoaded() {
                     @Override
-                    public void onBitmapLoaded(Bitmap bitmap, Picasso.LoadedFrom from) {
-                        final ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteStream);
-                        dataMap.putByteArray(DEEZER_JSON_ALBUM_SMALL_COVER, byteStream.toByteArray());
-                    }
-
-                    @Override
-                    public void onBitmapFailed(Drawable errorDrawable) {
-
-                    }
-
-                    @Override
-                    public void onPrepareLoad(Drawable placeHolderDrawable) {
-
+                    public void onBitmapLoaded(Asset asset) {
+                        try {
+                            DataMap dataMap = dataMapRequest.getDataMap();
+                            dataMap.putAsset(DEEZER_JSON_ARRAY, getAssetFromJsonObject(JSONTools.generateAlbumJson(album.toJson())));
+                            dataMap.putLong("timestamp", System.currentTimeMillis());
+                            dataMap.putAsset(DEEZER_JSON_ALBUM_SMALL_COVER, asset);
+                            PutDataRequest request = dataMapRequest.asPutDataRequest();
+                            Wearable.DataApi.putDataItem(mGoogleApiClient, request);
+                        } catch (JSONException e) {
+                            Log.e("onBitmapLoaded", e.getMessage());
+                        }
                     }
                 };
-                Picasso.with(getApplicationContext()).load(album.getSmallImageUrl()).into(target);
-                PutDataRequest request = dataMapRequest.asPutDataRequest();
-                Wearable.DataApi.putDataItem(mGoogleApiClient, request);
+                getBitmapAssetFromUrl(album.getSmallImageUrl(), onBitmapLoaded);
             }
         } else {
             Log.e("GoogleApiClient", "No connection to a wearable available.");
         }
     }
 
+    private void getBitmapAssetFromUrl(String mUrl, final OnBitmapLoaded mCallback) {
+        imageLoader.loadImage(mUrl, new ImageLoadingListener() {
+            @Override
+            public void onLoadingStarted(String imageUri, View view) {
+            }
+
+            @Override
+            public void onLoadingFailed(String imageUri, View view, FailReason failReason) {
+            }
+
+            @Override
+            public void onLoadingComplete(String imageUri, View view, Bitmap loadedImage) {
+                final ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+                loadedImage.compress(Bitmap.CompressFormat.PNG, 100, byteStream);
+                mCallback.onBitmapLoaded(Asset.createFromBytes(byteStream.toByteArray()));
+            }
+
+            @Override
+            public void onLoadingCancelled(String imageUri, View view) {
+            }
+        });
+    }
+
     private Asset getAssetFromJsonObject(JSONObject jsonObject) {
         return Asset.createFromBytes(jsonObject.toString().getBytes());
+    }
+
+
+    public interface OnBitmapLoaded {
+        void onBitmapLoaded(Asset asset);
     }
 }

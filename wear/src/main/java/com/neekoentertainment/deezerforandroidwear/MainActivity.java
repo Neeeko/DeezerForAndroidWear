@@ -32,13 +32,15 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 public class MainActivity extends WearableActivity {
     public static final String DEEZER_DATA_WATCH_REQUEST = "deezer_data_watch_request";
     private WearableListView mListView;
     private DataReceiver mDataReceiver;
-    private MyAlbumAdapter myAlbumAdapter;
+    private AlbumAdapter mAlbumAdapter;
     private GoogleApiClient mGoogleApiClient;
 
     public static Bitmap getBitmapFromByteArray(byte[] byteArray) {
@@ -54,9 +56,8 @@ public class MainActivity extends WearableActivity {
         mDataReceiver.setListener(new DataReceiver.DataReceivedListener() {
             @Override
             public void onDataReceived(JSONObject jsonObject, Bitmap albumCover) {
-                myAlbumAdapter.addAlbum(jsonObject);
-                myAlbumAdapter.addCover(albumCover);
-                myAlbumAdapter.notifyDataSetChanged();
+                mAlbumAdapter.addAlbum(jsonObject, albumCover);
+                mAlbumAdapter.notifyDataSetChanged();
             }
         });
         IntentFilter intentFilter = new IntentFilter();
@@ -108,8 +109,7 @@ public class MainActivity extends WearableActivity {
         mGoogleApiClient = getGoogleApiClient();
         requestConnectedUserAlbums();
         mListView = (WearableListView) findViewById(R.id.album_list);
-        myAlbumAdapter = new MyAlbumAdapter(getApplicationContext());
-        myAlbumAdapter.setHasStableIds(true);
+        mAlbumAdapter = new AlbumAdapter(getApplicationContext());
         final ImageView header = (ImageView) findViewById(R.id.header);
         mListView.addOnScrollListener(new WearableListView.OnScrollListener() {
             @Override
@@ -133,7 +133,7 @@ public class MainActivity extends WearableActivity {
 
             }
         });
-        mListView.setAdapter(myAlbumAdapter);
+        mListView.setAdapter(mAlbumAdapter);
     }
 
     @Override
@@ -178,23 +178,39 @@ public class MainActivity extends WearableActivity {
         }
     }
 
-    public class MyAlbumAdapter extends WearableListView.Adapter {
+    public class AlbumAdapter extends WearableListView.Adapter {
         private final LayoutInflater mInflater;
         private List<JSONObject> mAlbumList;
         private List<Bitmap> mCoverList;
 
-        public MyAlbumAdapter(Context context) {
+        public AlbumAdapter(Context context) {
             mAlbumList = new ArrayList<>();
             mCoverList = new ArrayList<>();
             mInflater = LayoutInflater.from(context);
         }
 
-        public void addAlbum(JSONObject album) {
-            mAlbumList.add(album);
+        public void addAlbum(JSONObject album, Bitmap albumCover) {
+            int index = getInsertIndex(album);
+            mAlbumList.add(index, album);
+            mCoverList.add(index, albumCover);
         }
 
-        public void addCover(Bitmap bitmap) {
-            mCoverList.add(bitmap);
+        private int getInsertIndex(JSONObject newAlbum) {
+            int index = Collections.binarySearch(mAlbumList, newAlbum, new Comparator<JSONObject>() {
+                @Override
+                public int compare(JSONObject album1, JSONObject album2) {
+                    try {
+                        return album1.getString("title").toLowerCase().compareTo(album2.getString("title").toLowerCase());
+                    } catch (JSONException e) {
+                        Log.e("AlbumAdapter", e.getMessage());
+                    }
+                    return 0;
+                }
+            });
+            if (index < 0) {
+                index = (index * -1) - 1;
+            }
+            return index;
         }
 
         @Override
@@ -237,10 +253,6 @@ public class MainActivity extends WearableActivity {
                 albumName = (TextView) itemView.findViewById(R.id.album_name);
                 artistName = (TextView) itemView.findViewById(R.id.artist_name);
                 albumCover = (ImageView) itemView.findViewById(R.id.album_cover);
-            }
-
-            public void setAlbumCover(Bitmap albumCover) {
-                this.albumCover.setImageBitmap(albumCover);
             }
         }
     }
