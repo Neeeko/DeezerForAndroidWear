@@ -37,8 +37,10 @@ public class ListenerService extends WearableListenerService {
     public static final String GET_PHONE_DATA_ACTION = "get_phone_data_action";
     public static final String DATA_ITEM_PATH = "/deezer_data";
     public static final String DEEZER_JSON_ARRAY = "data";
+    public static final String DEEZER_JSON_ARRAY_SIZE = "data_size";
     public static final String DEEZER_JSON_ALBUM_SMALL_COVER = "cover_small";
     public static final String DEEZER_DISCONNECTED_MESSAGE = "deezer_disconnected";
+    public static final String DEEZER_START_MESSAGE = "deezer_start";
     public static final String DEEZER_STATUS = "deezer_status";
 
     private GoogleApiClient mGoogleApiClient;
@@ -57,7 +59,17 @@ public class ListenerService extends WearableListenerService {
 
     @Override
     public void onMessageReceived(MessageEvent messageEvent) {
-        if (messageEvent.getPath().equals(DEEZER_DISCONNECTED_MESSAGE)) {
+        String messageEventPath = messageEvent.getPath();
+        if (messageEventPath.contains(DEEZER_START_MESSAGE)) {
+            String[] splitMessage = messageEventPath.split(":");
+            int numberOfAlbums = Integer.valueOf(splitMessage[1]);
+            Log.d("ListenerService", "Preparing to receive " + numberOfAlbums + " albums.");
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.putExtra(DEEZER_STATUS, DEEZER_START_MESSAGE);
+            intent.putExtra(DEEZER_JSON_ARRAY_SIZE, numberOfAlbums);
+            intent.setAction(GET_PHONE_DATA_ACTION);
+            LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+        } else if (messageEventPath.equals(DEEZER_DISCONNECTED_MESSAGE)) {
             Intent intent = new Intent(this, MainActivity.class);
             intent.putExtra(DEEZER_STATUS, DEEZER_DISCONNECTED_MESSAGE);
             intent.setAction(GET_PHONE_DATA_ACTION);
@@ -68,22 +80,25 @@ public class ListenerService extends WearableListenerService {
     @Override
     public void onDataChanged(DataEventBuffer dataEvents) {
         for (DataEvent event : dataEvents) {
-            if (event.getType() == DataEvent.TYPE_CHANGED &&
-                    event.getDataItem().getUri().getPath().equals(DATA_ITEM_PATH)) {
-                DataMapItem dataMapItem = DataMapItem.fromDataItem(event.getDataItem());
-                DataMap dataMap = dataMapItem.getDataMap();
-                Asset profileAsset = dataMap.getAsset(DEEZER_JSON_ARRAY);
-                Asset bitmapAsset = dataMap.getAsset(DEEZER_JSON_ALBUM_SMALL_COVER);
-                try {
-                    JSONObject albumData = loadJsonFromAsset(profileAsset);
-                    Intent intent = new Intent(this, MainActivity.class);
-                    intent.putExtra(DEEZER_JSON_ARRAY, albumData.toString());
-                    Bitmap albumCover = loadBitmapFromAsset(bitmapAsset);
-                    intent.putExtra(DEEZER_JSON_ALBUM_SMALL_COVER, getByteArrayFromBitmap(albumCover));
-                    intent.setAction(GET_PHONE_DATA_ACTION);
-                    LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
-                } catch (IOException | JSONException e) {
-                    Log.e("ListenerService", e.getMessage());
+            if (event.getType() == DataEvent.TYPE_CHANGED) {
+                switch (event.getDataItem().getUri().getPath()) {
+                    case DATA_ITEM_PATH:
+                        DataMapItem dataMapItem = DataMapItem.fromDataItem(event.getDataItem());
+                        DataMap dataMap = dataMapItem.getDataMap();
+                        Asset profileAsset = dataMap.getAsset(DEEZER_JSON_ARRAY);
+                        Asset bitmapAsset = dataMap.getAsset(DEEZER_JSON_ALBUM_SMALL_COVER);
+                        try {
+                            JSONObject albumData = loadJsonFromAsset(profileAsset);
+                            Intent intent = new Intent(this, MainActivity.class);
+                            intent.putExtra(DEEZER_JSON_ARRAY, albumData.toString());
+                            Bitmap albumCover = loadBitmapFromAsset(bitmapAsset);
+                            intent.putExtra(DEEZER_JSON_ALBUM_SMALL_COVER, getByteArrayFromBitmap(albumCover));
+                            intent.setAction(GET_PHONE_DATA_ACTION);
+                            LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+                        } catch (IOException | JSONException e) {
+                            Log.e("ListenerService", e.getMessage());
+                        }
+                        break;
                 }
             }
         }

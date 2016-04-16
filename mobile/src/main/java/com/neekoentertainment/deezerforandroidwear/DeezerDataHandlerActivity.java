@@ -50,6 +50,8 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
     public static final String DEEZER_JSON_ARRAY = "data";
     public static final String DEEZER_JSON_ALBUM_SMALL_COVER = "cover_small";
     public static final String DEEZER_DISCONNECTED_MESSAGE = "deezer_disconnected";
+    public static final String DEEZER_START_MESSAGE = "deezer_start";
+
 
     private GoogleApiClient mGoogleApiClient;
 
@@ -105,7 +107,7 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
                 // Notifies the watch that the user is disconnected from Deezer
                 Wearable.NodeApi.getConnectedNodes(mGoogleApiClient).setResultCallback(new ResultCallback<NodeApi.GetConnectedNodesResult>() {
                     @Override
-                    public void onResult(NodeApi.GetConnectedNodesResult nodes) {
+                    public void onResult(@NonNull NodeApi.GetConnectedNodesResult nodes) {
                         for (Node node : nodes.getNodes()) {
                             Wearable.MessageApi.sendMessage(
                                     mGoogleApiClient, node.getId(), DEEZER_DISCONNECTED_MESSAGE, null);
@@ -139,6 +141,15 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
                     if (userAlbums.getNextUrl() != null && !userAlbums.getNextUrl().isEmpty()) {
                         getCurrentUserAlbums(userAlbums.getNextUrl());
                     } else {
+                        Wearable.NodeApi.getConnectedNodes(mGoogleApiClient).setResultCallback(new ResultCallback<NodeApi.GetConnectedNodesResult>() {
+                            @Override
+                            public void onResult(@NonNull NodeApi.GetConnectedNodesResult nodes) {
+                                for (Node node : nodes.getNodes()) {
+                                    Wearable.MessageApi.sendMessage(
+                                            mGoogleApiClient, node.getId(), DEEZER_START_MESSAGE + ":" + mAlbumList.size(), null);
+                                }
+                            }
+                        });
                         retrieveDeviceNode(mAlbumList);
                     }
                 } catch (JSONException e) {
@@ -192,6 +203,7 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
                             dataMap.putLong("timestamp", System.currentTimeMillis());
                             dataMap.putAsset(DEEZER_JSON_ALBUM_SMALL_COVER, asset);
                             PutDataRequest request = dataMapRequest.asPutDataRequest();
+                            request.setUrgent();
                             Wearable.DataApi.putDataItem(mGoogleApiClient, request);
                         } catch (JSONException e) {
                             Log.e("onBitmapLoaded", e.getMessage());

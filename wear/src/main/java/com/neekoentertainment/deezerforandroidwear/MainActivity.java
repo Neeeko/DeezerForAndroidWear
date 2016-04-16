@@ -12,6 +12,7 @@ import android.support.v4.content.LocalBroadcastManager;
 import android.support.wearable.activity.WearableActivity;
 import android.support.wearable.view.WearableListView;
 import android.text.method.ScrollingMovementMethod;
+import android.util.Base64;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -28,20 +29,34 @@ import com.google.android.gms.wearable.NodeApi;
 import com.google.android.gms.wearable.Wearable;
 import com.neekoentertainment.deezerforandroidwear.listener.ListenerService;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
 public class MainActivity extends WearableActivity {
     public static final String DEEZER_DATA_WATCH_REQUEST = "deezer_data_watch_request";
+    public static final String ALBUM_DATA_FILENAME = "/album_data.dd";
+    public static final String ALBUM_COVER_FILENAME = "/album_cover.dd";
     private WearableListView mListView;
     private DataReceiver mDataReceiver;
     private AlbumAdapter mAlbumAdapter;
     private GoogleApiClient mGoogleApiClient;
+    private int mAlbumsAmount;
+    private int mReceivedAlbumsAmount;
 
     public static Bitmap getBitmapFromByteArray(byte[] byteArray) {
         return BitmapFactory.decodeByteArray(byteArray, 0, byteArray.length);
@@ -52,19 +67,87 @@ public class MainActivity extends WearableActivity {
         super.onStart();
         if (mGoogleApiClient != null)
             mGoogleApiClient.connect();
-        mDataReceiver = new DataReceiver();
-        mDataReceiver.setListener(new DataReceiver.DataReceivedListener() {
-            @Override
-            public void onDataReceived(JSONObject jsonObject, Bitmap albumCover) {
-                mAlbumAdapter.addAlbum(jsonObject, albumCover);
-                mAlbumAdapter.notifyDataSetChanged();
+        if (!areDataFileUpToDate()) {
+            mDataReceiver = new DataReceiver();
+            mDataReceiver.setListener(new DataReceiver.DataReceivedListener() {
+                @Override
+                public void onAlbumDataReceived(JSONObject jsonObject, Bitmap albumCover) {
+                    mAlbumAdapter.addAlbum(jsonObject, albumCover);
+                    mAlbumAdapter.notifyDataSetChanged();
+                    mReceivedAlbumsAmount++;
+                    Log.d("Test", "mReceivedAlbumsAmount = " + mReceivedAlbumsAmount);
+                    if (mReceivedAlbumsAmount == mAlbumsAmount) {
+                        saveAlbumToFile(ALBUM_DATA_FILENAME, mAlbumAdapter.getAlbumsJsonArray());
+                        saveAlbumToFile(ALBUM_COVER_FILENAME, mAlbumAdapter.getAlbumsCoverJsonArray());
+                    }
+                }
+
+                @Override
+                public void onStartDataReceived(int albumsAmount) {
+                    mAlbumsAmount = albumsAmount;
+                }
+            });
+            IntentFilter intentFilter = new IntentFilter();
+            intentFilter.addAction(ListenerService.GET_PHONE_DATA_ACTION);
+            LocalBroadcastManager.getInstance(this).registerReceiver(mDataReceiver, intentFilter);
+            Intent intent = new Intent(MainActivity.this, ListenerService.class);
+            startService(intent);
+        } else {
+            JSONArray albums = getAlbumsFromFile(ALBUM_DATA_FILENAME);
+            JSONArray covers = getAlbumsFromFile(ALBUM_COVER_FILENAME);
+            for (int i = 0; i < albums.length(); i++) {
+                try {
+                    byte[] byteArray = Base64.decode(covers.getString(i), Base64.DEFAULT);
+                    Log.d("Test", "salut  = " + Arrays.toString(byteArray));
+                    Bitmap albumCover = getBitmapFromByteArray(byteArray);
+                    if (albumCover != null)
+                        Log.d("Test", "album not null");
+                    else
+                        Log.d("Test", "album null fuck");
+                    mAlbumAdapter.addAlbum(albums.getJSONObject(i), albumCover);
+                    mAlbumAdapter.notifyDataSetChanged();
+                } catch (JSONException e) {
+                    Log.e("MainActivity", e.getMessage());
+                }
             }
-        });
-        IntentFilter intentFilter = new IntentFilter();
-        intentFilter.addAction(ListenerService.GET_PHONE_DATA_ACTION);
-        LocalBroadcastManager.getInstance(this).registerReceiver(mDataReceiver, intentFilter);
-        Intent intent = new Intent(MainActivity.this, ListenerService.class);
-        startService(intent);
+        }
+    }
+
+    private JSONArray getAlbumsFromFile(String fileName) {
+        JSONArray albums = new JSONArray();
+        File albumData = new File(getApplicationContext().getExternalCacheDir(), fileName);
+        try {
+            BufferedReader bufferedReader = new BufferedReader(new FileReader(albumData));
+            String line = bufferedReader.readLine(); // Only one line
+            albums = new JSONArray(line);
+        } catch (IOException | JSONException e) {
+            Log.e("MainActivity", e.getMessage());
+        }
+        return albums;
+    }
+
+    private boolean areDataFileUpToDate() {
+        File albumData = new File(getApplicationContext().getExternalCacheDir(), ALBUM_DATA_FILENAME);
+        File coverData = new File(getApplicationContext().getExternalCacheDir(), ALBUM_DATA_FILENAME);
+        if (albumData.length() > 0 && coverData.length() > 0) {
+            Log.d("Test", "both files are existing and with data");
+            return true;
+        } else {
+            Log.d("Test", "files doesn't exist or are not full");
+            return false;
+        }
+    }
+
+    private void saveAlbumToFile(String fileName, JSONArray album) {
+        try {
+            File file = new File(getApplicationContext().getExternalCacheDir(), fileName);
+            BufferedWriter outputStream = new BufferedWriter(new FileWriter(file, true));
+            outputStream.write(album.toString());
+            outputStream.flush();
+            outputStream.close();
+        } catch (IOException e) {
+            Log.e("MainActivity", e.getMessage());
+        }
     }
 
     private GoogleApiClient getGoogleApiClient() {
@@ -148,24 +231,35 @@ public class MainActivity extends WearableActivity {
     public static class DataReceiver extends BroadcastReceiver {
         private DataReceivedListener mDataReceivedListener;
 
+        private Context mContext;
+
         public void setListener(DataReceivedListener dataReceivedListener) {
             mDataReceivedListener = dataReceivedListener;
         }
 
         @Override
         public void onReceive(Context context, Intent intent) {
+            mContext = context;
             if (intent != null && intent.getStringExtra(ListenerService.DEEZER_JSON_ARRAY) != null && intent.getByteArrayExtra(ListenerService.DEEZER_JSON_ALBUM_SMALL_COVER) != null) {
                 if (mDataReceivedListener != null) {
                     try {
-                        mDataReceivedListener.onDataReceived(new JSONObject(intent.getStringExtra(ListenerService.DEEZER_JSON_ARRAY)),
-                                getBitmapFromByteArray(intent.getByteArrayExtra(ListenerService.DEEZER_JSON_ALBUM_SMALL_COVER)));
-                    } catch (JSONException e) {
+                        JSONObject album = new JSONObject(intent.getStringExtra(ListenerService.DEEZER_JSON_ARRAY));
+                        //saveAlbumToFile(album);
+                        byte[] albumCover = intent.getByteArrayExtra(ListenerService.DEEZER_JSON_ALBUM_SMALL_COVER);
+                        //saveAlbumCoverToFile(album.getLong("id"), albumCover);
+                        mDataReceivedListener.onAlbumDataReceived(album, getBitmapFromByteArray(albumCover));
+                    } catch (JSONException /*| IOException */e) {
                         Log.e("DataReceiver", e.getMessage());
                     }
                 }
             } else if (intent != null && intent.getStringExtra(ListenerService.DEEZER_STATUS) != null) {
                 String deezerStatus = intent.getStringExtra(ListenerService.DEEZER_STATUS);
                 switch (deezerStatus) {
+                    case ListenerService.DEEZER_START_MESSAGE:
+                        if (mDataReceivedListener != null && intent.getIntExtra(ListenerService.DEEZER_JSON_ARRAY_SIZE, -1) != -1) {
+                            mDataReceivedListener.onStartDataReceived(intent.getIntExtra(ListenerService.DEEZER_JSON_ARRAY_SIZE, -1));
+                        }
+                        break;
                     case ListenerService.DEEZER_DISCONNECTED_MESSAGE:
                         Toast.makeText(context, "Please connect to Deezer from your phone.", Toast.LENGTH_LONG).show();
                         break;
@@ -173,8 +267,17 @@ public class MainActivity extends WearableActivity {
             }
         }
 
+        private void saveAlbumCoverToFile(long id, byte[] albumCover) throws IOException {
+            File file = new File(mContext.getExternalCacheDir(), id + ".dd");
+            FileOutputStream fileOutputStream = new FileOutputStream(file);
+            fileOutputStream.write(albumCover);
+            fileOutputStream.close();
+        }
+
         public interface DataReceivedListener {
-            void onDataReceived(JSONObject jsonObject, Bitmap albumCover);
+            void onAlbumDataReceived(JSONObject jsonObject, Bitmap albumCover);
+
+            void onStartDataReceived(int albumsAmount);
         }
     }
 
@@ -182,10 +285,14 @@ public class MainActivity extends WearableActivity {
         private final LayoutInflater mInflater;
         private List<JSONObject> mAlbumList;
         private List<Bitmap> mCoverList;
+        private JSONArray mAlbumsJsonArray;
+        private JSONArray mAlbumsCoverJsonArray;
 
         public AlbumAdapter(Context context) {
             mAlbumList = new ArrayList<>();
             mCoverList = new ArrayList<>();
+            mAlbumsJsonArray = new JSONArray();
+            mAlbumsCoverJsonArray = new JSONArray();
             mInflater = LayoutInflater.from(context);
         }
 
@@ -193,6 +300,20 @@ public class MainActivity extends WearableActivity {
             int index = getInsertIndex(album);
             mAlbumList.add(index, album);
             mCoverList.add(index, albumCover);
+            try {
+                mAlbumsJsonArray.put(index, album);
+                mAlbumsCoverJsonArray.put(index, Base64.encodeToString(getByteArrayFromBitmap(albumCover), Base64.DEFAULT));
+            } catch (JSONException | IOException e) {
+                Log.e("AlbumAdapter", e.getMessage());
+            }
+        }
+
+        public JSONArray getAlbumsCoverJsonArray() {
+            return mAlbumsCoverJsonArray;
+        }
+
+        public JSONArray getAlbumsJsonArray() {
+            return mAlbumsJsonArray;
         }
 
         private int getInsertIndex(JSONObject newAlbum) {
@@ -211,6 +332,14 @@ public class MainActivity extends WearableActivity {
                 index = (index * -1) - 1;
             }
             return index;
+        }
+
+        private byte[] getByteArrayFromBitmap(Bitmap bitmap) throws IOException {
+            ByteArrayOutputStream stream = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
+            byte[] byteArray = stream.toByteArray();
+            stream.close();
+            return byteArray;
         }
 
         @Override
