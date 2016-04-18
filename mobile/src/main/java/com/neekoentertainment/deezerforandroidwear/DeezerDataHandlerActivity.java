@@ -1,12 +1,10 @@
 package com.neekoentertainment.deezerforandroidwear;
 
 import android.content.Intent;
-import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
-import android.view.View;
 
 import com.deezer.sdk.model.Album;
 import com.deezer.sdk.model.PaginatedList;
@@ -24,17 +22,14 @@ import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
 import com.neekoentertainment.deezerforandroidwear.listener.ListenerService;
+import com.neekoentertainment.deezerforandroidwear.tools.AssetTools;
 import com.neekoentertainment.deezerforandroidwear.tools.JSONTools;
 import com.neekoentertainment.deezerforandroidwear.tools.ServicesAuthentication;
 import com.nostra13.universalimageloader.core.ImageLoader;
 import com.nostra13.universalimageloader.core.ImageLoaderConfiguration;
-import com.nostra13.universalimageloader.core.assist.FailReason;
-import com.nostra13.universalimageloader.core.listener.ImageLoadingListener;
 
 import org.json.JSONException;
-import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -55,7 +50,7 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
 
     private GoogleApiClient mGoogleApiClient;
 
-    private ImageLoader imageLoader;
+    private ImageLoader mImageLoader;
 
     private DeezerConnect mDeezerConnect;
 
@@ -88,8 +83,8 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
 
     private void init(final String requestedContent) {
         mAlbumList = new ArrayList<>();
-        imageLoader = ImageLoader.getInstance();
-        imageLoader.init(ImageLoaderConfiguration.createDefault(getApplicationContext()));
+        mImageLoader = ImageLoader.getInstance();
+        mImageLoader.init(ImageLoaderConfiguration.createDefault(getApplicationContext()));
         mGoogleApiClient = ServicesAuthentication.getGoogleApiClient(this);
         ServicesAuthentication.DeezerConnection mCallback = new ServicesAuthentication.DeezerConnection() {
             @Override
@@ -189,17 +184,17 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
             Collections.sort(albums, new Comparator<Album>() {
                 @Override
                 public int compare(Album album1, Album album2) {
-                    return album1.getTitle().toLowerCase().compareTo(album2.getTitle().toLowerCase());
+                    return album1.getArtist().getName().toLowerCase().compareTo(album2.getArtist().getName().toLowerCase());
                 }
             });
             final PutDataMapRequest dataMapRequest = PutDataMapRequest.create(DATA_ITEM_PATH);
             for (final Album album : albums) {
-                OnBitmapLoaded onBitmapLoaded = new OnBitmapLoaded() {
+                AssetTools.OnBitmapLoaded onBitmapLoaded = new AssetTools.OnBitmapLoaded() {
                     @Override
                     public void onBitmapLoaded(Asset asset) {
                         try {
                             DataMap dataMap = dataMapRequest.getDataMap();
-                            dataMap.putAsset(DEEZER_JSON_ARRAY, getAssetFromJsonObject(JSONTools.generateAlbumJson(album.toJson())));
+                            dataMap.putAsset(DEEZER_JSON_ARRAY, AssetTools.getAssetFromJsonObject(JSONTools.generateAlbumJson(album.toJson())));
                             dataMap.putLong("timestamp", System.currentTimeMillis());
                             dataMap.putAsset(DEEZER_JSON_ALBUM_SMALL_COVER, asset);
                             PutDataRequest request = dataMapRequest.asPutDataRequest();
@@ -210,42 +205,10 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
                         }
                     }
                 };
-                getBitmapAssetFromUrl(album.getSmallImageUrl(), onBitmapLoaded);
+                AssetTools.getBitmapAssetFromUrl(album.getSmallImageUrl(), onBitmapLoaded, mImageLoader);
             }
         } else {
             Log.e("GoogleApiClient", "No connection to a wearable available.");
         }
-    }
-
-    private void getBitmapAssetFromUrl(String mUrl, final OnBitmapLoaded mCallback) {
-        imageLoader.loadImage(mUrl, new ImageLoadingListener() {
-            @Override
-            public void onLoadingStarted(String imageUri, View view) {
-            }
-
-            @Override
-            public void onLoadingFailed(String imageUri, View view, FailReason failReason) {
-            }
-
-            @Override
-            public void onLoadingComplete(String imageUri, View view, Bitmap loadedImage) {
-                final ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-                loadedImage.compress(Bitmap.CompressFormat.PNG, 100, byteStream);
-                mCallback.onBitmapLoaded(Asset.createFromBytes(byteStream.toByteArray()));
-            }
-
-            @Override
-            public void onLoadingCancelled(String imageUri, View view) {
-            }
-        });
-    }
-
-    private Asset getAssetFromJsonObject(JSONObject jsonObject) {
-        return Asset.createFromBytes(jsonObject.toString().getBytes());
-    }
-
-
-    public interface OnBitmapLoaded {
-        void onBitmapLoaded(Asset asset);
     }
 }

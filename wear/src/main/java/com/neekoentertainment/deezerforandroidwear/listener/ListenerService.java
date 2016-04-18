@@ -1,13 +1,10 @@
 package com.neekoentertainment.deezerforandroidwear.listener;
 
-import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.support.v4.content.LocalBroadcastManager;
 import android.util.Log;
 
-import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.DataEvent;
@@ -15,19 +12,16 @@ import com.google.android.gms.wearable.DataEventBuffer;
 import com.google.android.gms.wearable.DataMap;
 import com.google.android.gms.wearable.DataMapItem;
 import com.google.android.gms.wearable.MessageEvent;
-import com.google.android.gms.wearable.Wearable;
 import com.google.android.gms.wearable.WearableListenerService;
 import com.neekoentertainment.deezerforandroidwear.MainActivity;
+import com.neekoentertainment.deezerforandroidwear.tools.AssetTools;
+import com.neekoentertainment.deezerforandroidwear.tools.BitmapTools;
+import com.neekoentertainment.deezerforandroidwear.tools.GoogleApiTools;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Created by Nicolas on 27/10/2015.
@@ -45,16 +39,10 @@ public class ListenerService extends WearableListenerService {
 
     private GoogleApiClient mGoogleApiClient;
 
-    public static GoogleApiClient getGoogleApiClient(Context context) {
-        return new GoogleApiClient.Builder(context)
-                .addApi(Wearable.API)
-                .build();
-    }
-
     @Override
     public void onCreate() {
         super.onCreate();
-        mGoogleApiClient = getGoogleApiClient(this);
+        mGoogleApiClient = GoogleApiTools.getGoogleApiClient(this);
     }
 
     @Override
@@ -88,13 +76,15 @@ public class ListenerService extends WearableListenerService {
                         Asset profileAsset = dataMap.getAsset(DEEZER_JSON_ARRAY);
                         Asset bitmapAsset = dataMap.getAsset(DEEZER_JSON_ALBUM_SMALL_COVER);
                         try {
-                            JSONObject albumData = loadJsonFromAsset(profileAsset);
-                            Intent intent = new Intent(this, MainActivity.class);
-                            intent.putExtra(DEEZER_JSON_ARRAY, albumData.toString());
-                            Bitmap albumCover = loadBitmapFromAsset(bitmapAsset);
-                            intent.putExtra(DEEZER_JSON_ALBUM_SMALL_COVER, getByteArrayFromBitmap(albumCover));
-                            intent.setAction(GET_PHONE_DATA_ACTION);
-                            LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+                            JSONObject albumData = AssetTools.loadJsonFromAsset(profileAsset, mGoogleApiClient);
+                            if (albumData != null) {
+                                Intent intent = new Intent(this, MainActivity.class);
+                                intent.putExtra(DEEZER_JSON_ARRAY, albumData.toString());
+                                Bitmap albumCover = BitmapTools.loadBitmapFromAsset(bitmapAsset, mGoogleApiClient);
+                                intent.putExtra(DEEZER_JSON_ALBUM_SMALL_COVER, BitmapTools.getByteArrayFromBitmap(albumCover));
+                                intent.setAction(GET_PHONE_DATA_ACTION);
+                                LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+                            }
                         } catch (IOException | JSONException e) {
                             Log.e("ListenerService", e.getMessage());
                         }
@@ -102,63 +92,5 @@ public class ListenerService extends WearableListenerService {
                 }
             }
         }
-    }
-
-    private byte[] getByteArrayFromBitmap(Bitmap bitmap) throws IOException {
-        ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
-        byte[] byteArray = stream.toByteArray();
-        stream.close();
-        return byteArray;
-    }
-
-    private InputStream getAssetInputStream(Asset asset) {
-        if (asset == null) {
-            throw new IllegalArgumentException("Asset must be non-null");
-        }
-        ConnectionResult result =
-                mGoogleApiClient.blockingConnect(10000, TimeUnit.MILLISECONDS);
-        if (!result.isSuccess()) {
-            return null;
-        }
-        InputStream assetInputStream = Wearable.DataApi.getFdForAsset(
-                mGoogleApiClient, asset).await().getInputStream();
-        mGoogleApiClient.disconnect();
-        return assetInputStream;
-    }
-
-    public JSONObject loadJsonFromAsset(Asset asset) throws IOException, JSONException {
-        InputStream assetInputStream = getAssetInputStream(asset);
-        if (assetInputStream == null) {
-            Log.e("LoadJson", "Requested an unknown Asset.");
-            return null;
-        }
-        BufferedReader streamReader = new BufferedReader(new InputStreamReader(assetInputStream, "UTF-8"));
-        StringBuilder responseStrBuilder = new StringBuilder();
-
-        String inputStr;
-        while ((inputStr = streamReader.readLine()) != null)
-            responseStrBuilder.append(inputStr);
-        return new JSONObject(responseStrBuilder.toString());
-    }
-
-    public Bitmap loadBitmapFromAsset(Asset asset) {
-        if (asset == null) {
-            throw new IllegalArgumentException("Asset must be non-null");
-        }
-        ConnectionResult result =
-                mGoogleApiClient.blockingConnect(10000, TimeUnit.MILLISECONDS);
-        if (!result.isSuccess()) {
-            return null;
-        }
-        InputStream assetInputStream = Wearable.DataApi.getFdForAsset(
-                mGoogleApiClient, asset).await().getInputStream();
-        mGoogleApiClient.disconnect();
-
-        if (assetInputStream == null) {
-            Log.w("LoadBitmap", "Requested an unknown Asset.");
-            return null;
-        }
-        return BitmapFactory.decodeStream(assetInputStream);
     }
 }

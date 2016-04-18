@@ -3,6 +3,7 @@ package com.neekoentertainment.deezerforandroidwear.tools;
 import android.app.Activity;
 import android.content.Context;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.util.Log;
 
 import com.deezer.sdk.model.Permissions;
@@ -40,7 +41,7 @@ public class ServicesAuthentication {
                 })
                 .addOnConnectionFailedListener(new GoogleApiClient.OnConnectionFailedListener() {
                     @Override
-                    public void onConnectionFailed(ConnectionResult result) {
+                    public void onConnectionFailed(@NonNull ConnectionResult result) {
                         Log.d("GoogleApiClient", "onConnectionFailed: " + result);
                     }
                 })
