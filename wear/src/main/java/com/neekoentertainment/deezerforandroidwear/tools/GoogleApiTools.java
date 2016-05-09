@@ -19,7 +19,7 @@ public class GoogleApiTools {
                 .addConnectionCallbacks(new GoogleApiClient.ConnectionCallbacks() {
                     @Override
                     public void onConnected(Bundle connectionHint) {
-                        Log.d("GoogleApiClient", "onConnected: " + connectionHint);
+
                     }
 
                     @Override

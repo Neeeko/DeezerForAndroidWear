@@ -8,11 +8,15 @@ import org.json.JSONObject;
  */
 public class JSONTools {
 
+    public static final String KEY_ID = "id";
+    public static final String KEY_ARTIST = "artist";
+    public static final String KEY_TITLE = "title";
+
     public static JSONObject generateAlbumJson(JSONObject fullData) throws JSONException {
         JSONObject selectedData = new JSONObject();
-        selectedData.put("id", fullData.getLong("id"));
-        selectedData.put("artist", fullData.getJSONObject("artist").getString("name"));
-        selectedData.put("title", fullData.getString("title"));
+        selectedData.put(KEY_ID, fullData.getLong("id"));
+        selectedData.put(KEY_ARTIST, fullData.getJSONObject("artist").getString("name"));
+        selectedData.put(KEY_TITLE, fullData.getString("title"));
         return selectedData;
     }
 }

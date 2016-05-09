@@ -46,6 +46,7 @@ import java.util.List;
 
 public class MainActivity extends WearableActivity {
     public static final String DEEZER_DATA_WATCH_REQUEST = "deezer_data_watch_request";
+    public static final String DEEZER_DATA_WATCH_UPDATE = "deezer_data_watch_update";
     public static final String ALBUM_DATA_FILENAME = "/album_data.dd";
     public static final String ALBUM_COVER_FILENAME = "/album_cover.dd";
     private WearableListView mListView;
@@ -55,6 +56,43 @@ public class MainActivity extends WearableActivity {
     private int mAlbumsAmount;
     private int mReceivedAlbumsAmount = 1;
     private boolean alreadySaved = false;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        mGoogleApiClient = GoogleApiTools.getGoogleApiClient(this);
+        requestConnectedUserAlbums();
+        mListView = (WearableListView) findViewById(R.id.album_list);
+        mAlbumAdapter = new AlbumAdapter(getApplicationContext());
+        final ImageView header = (ImageView) findViewById(R.id.header);
+        mListView.addOnScrollListener(new WearableListView.OnScrollListener() {
+            @Override
+            public void onScroll(int i) {
+
+            }
+
+            @Override
+            public void onAbsoluteScrollChange(int i) {
+                float newTranslation = Math.min(-i, 0);
+                header.setTranslationY(newTranslation);
+            }
+
+            @Override
+            public void onScrollStateChanged(int i) {
+
+            }
+
+            @Override
+            public void onCentralPositionChanged(int i) {
+
+            }
+        });
+        mListView.setAdapter(mAlbumAdapter);
+        if (areDataFileUpToDate()) {
+            retrieveDataFromFiles();
+        }
+    }
 
     @Override
     protected void onStart() {
@@ -129,52 +167,21 @@ public class MainActivity extends WearableActivity {
     }
 
     private void requestConnectedUserAlbums() {
+        final String message;
+        if (areDataFileUpToDate()) {
+            message = DEEZER_DATA_WATCH_UPDATE;
+        } else {
+            message = DEEZER_DATA_WATCH_REQUEST;
+        }
         Wearable.NodeApi.getConnectedNodes(mGoogleApiClient).setResultCallback(new ResultCallback<NodeApi.GetConnectedNodesResult>() {
             @Override
             public void onResult(@NonNull NodeApi.GetConnectedNodesResult nodes) {
                 for (Node node : nodes.getNodes()) {
                     Wearable.MessageApi.sendMessage(
-                            mGoogleApiClient, node.getId(), DEEZER_DATA_WATCH_REQUEST, null);
+                            mGoogleApiClient, node.getId(), message, null);
                 }
             }
         });
-    }
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-        mGoogleApiClient = GoogleApiTools.getGoogleApiClient(this);
-        requestConnectedUserAlbums();
-        mListView = (WearableListView) findViewById(R.id.album_list);
-        mAlbumAdapter = new AlbumAdapter(getApplicationContext());
-        final ImageView header = (ImageView) findViewById(R.id.header);
-        mListView.addOnScrollListener(new WearableListView.OnScrollListener() {
-            @Override
-            public void onScroll(int i) {
-
-            }
-
-            @Override
-            public void onAbsoluteScrollChange(int i) {
-                float newTranslation = Math.min(-i, 0);
-                header.setTranslationY(newTranslation);
-            }
-
-            @Override
-            public void onScrollStateChanged(int i) {
-
-            }
-
-            @Override
-            public void onCentralPositionChanged(int i) {
-
-            }
-        });
-        mListView.setAdapter(mAlbumAdapter);
-        if (areDataFileUpToDate()) {
-            retrieveDataFromFiles();
-        }
     }
 
     private void retrieveDataFromFiles() {

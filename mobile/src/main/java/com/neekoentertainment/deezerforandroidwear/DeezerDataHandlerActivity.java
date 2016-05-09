@@ -21,6 +21,7 @@ import com.google.android.gms.wearable.NodeApi;
 import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
+import com.neekoentertainment.deezerforandroidwear.database.DeezerDataHandler;
 import com.neekoentertainment.deezerforandroidwear.listener.ListenerService;
 import com.neekoentertainment.deezerforandroidwear.tools.AssetTools;
 import com.neekoentertainment.deezerforandroidwear.tools.JSONTools;
@@ -42,7 +43,9 @@ import java.util.concurrent.TimeUnit;
 public class DeezerDataHandlerActivity extends AppCompatActivity {
 
     public static final String DATA_ITEM_PATH = "/deezer_data";
+    public static final String DEEZER_ALBUM_URL = "user/me/albums";
     public static final String DEEZER_JSON_ARRAY = "data";
+    public static final String TIMESTAMP = "timestamp";
     public static final String DEEZER_JSON_ALBUM_SMALL_COVER = "cover_small";
     public static final String DEEZER_DISCONNECTED_MESSAGE = "deezer_disconnected";
     public static final String DEEZER_START_MESSAGE = "deezer_start";
@@ -54,13 +57,15 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
 
     private DeezerConnect mDeezerConnect;
 
+    private DeezerDataHandler mDeezerDataHandler;
     private List<Album> mAlbumList;
 
     @Override
     protected void onStart() {
-        super.onStart();
-        if (mGoogleApiClient != null)
+        if (mGoogleApiClient != null) {
             mGoogleApiClient.connect();
+        }
+        super.onStart();
     }
 
     @Override
@@ -69,6 +74,22 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
             mGoogleApiClient.disconnect();
         }
         super.onStop();
+    }
+
+    @Override
+    protected void onPause() {
+        if (mDeezerDataHandler != null) {
+            mDeezerDataHandler.close();
+        }
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        if (mDeezerDataHandler != null) {
+            mDeezerDataHandler.open();
+        }
+        super.onResume();
     }
 
     @Override
@@ -84,6 +105,8 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
     private void init(final String requestedContent) {
         mAlbumList = new ArrayList<>();
         mImageLoader = ImageLoader.getInstance();
+        mDeezerDataHandler = new DeezerDataHandler(this);
+        mDeezerDataHandler.open();
         mImageLoader.init(ImageLoaderConfiguration.createDefault(getApplicationContext()));
         mGoogleApiClient = ServicesAuthentication.getGoogleApiClient(this);
         ServicesAuthentication.DeezerConnection mCallback = new ServicesAuthentication.DeezerConnection() {
@@ -91,8 +114,28 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
             public void onDeezerConnected(DeezerConnect deezerConnect) {
                 mDeezerConnect = deezerConnect;
                 switch (requestedContent) {
-                    case "favorited_albums":
-                        getCurrentUserAlbums("user/me/albums");
+                    case ListenerService.DEEZER_GET_FAVORITED_ALBUMS:
+                        getCurrentUserAlbums(DEEZER_ALBUM_URL, new OnDataRetrieved() {
+                            @Override
+                            public void onDataRetrieved() {
+                                for (Album album : mAlbumList) {
+                                    mDeezerDataHandler.createLikedAlbum(album);
+                                }
+                                Wearable.NodeApi.getConnectedNodes(mGoogleApiClient).setResultCallback(new ResultCallback<NodeApi.GetConnectedNodesResult>() {
+                                    @Override
+                                    public void onResult(@NonNull NodeApi.GetConnectedNodesResult nodes) {
+                                        for (Node node : nodes.getNodes()) {
+                                            Wearable.MessageApi.sendMessage(
+                                                    mGoogleApiClient, node.getId(), DEEZER_START_MESSAGE + ":" + mAlbumList.size(), null);
+                                        }
+                                    }
+                                });
+                                retrieveDeviceNode();
+                            }
+                        });
+                        break;
+                    case ListenerService.DEEZER_UPDATE_FAVORITED_ALBUMS:
+                        updateCurrentUserAlbums();
                         break;
                 }
             }
@@ -122,7 +165,7 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
         ServicesAuthentication.getDeezerConnect(this, mCallback);
     }
 
-    private void getCurrentUserAlbums(String url) {
+    private void getCurrentUserAlbums(String url, final OnDataRetrieved onDataRetrieved) {
         RequestListener requestListener = new RequestListener() {
             @SuppressWarnings("unchecked")
             @Override
@@ -134,18 +177,9 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
                         mAlbumList.add(album);
                     }
                     if (userAlbums.getNextUrl() != null && !userAlbums.getNextUrl().isEmpty()) {
-                        getCurrentUserAlbums(userAlbums.getNextUrl());
+                        getCurrentUserAlbums(userAlbums.getNextUrl(), onDataRetrieved);
                     } else {
-                        Wearable.NodeApi.getConnectedNodes(mGoogleApiClient).setResultCallback(new ResultCallback<NodeApi.GetConnectedNodesResult>() {
-                            @Override
-                            public void onResult(@NonNull NodeApi.GetConnectedNodesResult nodes) {
-                                for (Node node : nodes.getNodes()) {
-                                    Wearable.MessageApi.sendMessage(
-                                            mGoogleApiClient, node.getId(), DEEZER_START_MESSAGE + ":" + mAlbumList.size(), null);
-                                }
-                            }
-                        });
-                        retrieveDeviceNode(mAlbumList);
+                        onDataRetrieved.onDataRetrieved();
                     }
                 } catch (JSONException e) {
                     Log.e("DeezerConnect", e.getMessage());
@@ -160,7 +194,36 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
         mDeezerConnect.requestAsync(request, requestListener);
     }
 
-    private void retrieveDeviceNode(final List<Album> albums) {
+    private void updateCurrentUserAlbums() {
+        getCurrentUserAlbums(DEEZER_ALBUM_URL, new OnDataRetrieved() {
+            @Override
+            public void onDataRetrieved() {
+                List<Long> deezerIdList = new ArrayList<>();
+                for (Album album : mAlbumList) {
+                    deezerIdList.add(album.getId());
+                }
+                Collections.sort(deezerIdList);
+                List<Long> likedAlbumsList = mDeezerDataHandler.getAllLikedAlbumsId();
+
+                //List<Long> tmpList = likedAlbumsList;
+                //tmpList.removeAll(deezerIdList);
+                Log.d("Test", "DEEZER ID ===== size = " + deezerIdList.size());
+                for (Long l : deezerIdList) {
+                    Log.d("Test", "val = " + l);
+                }
+                Log.d("Test", "BDD ID ===== size = " + likedAlbumsList.size());
+                for (Long l2 : likedAlbumsList) {
+                    Log.d("Test", "vala = " + l2);
+                }
+                Log.d("Test", "DEEZER ID ADD =====");
+                /*for (Long l : tmpList) {
+                    Log.d("Test", "val = " + l);
+                }*/
+            }
+        });
+    }
+
+    private void retrieveDeviceNode() {
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -169,9 +232,9 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
                     @Override
                     public void onResult(@NonNull NodeApi.GetConnectedNodesResult getConnectedNodesResult) {
                         try {
-                            getUserAlbumsCovers(albums);
+                            getUserAlbumsCovers(mAlbumList);
                         } catch (JSONException e) {
-                            Log.e("JSON error", "Could not retrieve Album Covers");
+                            Log.e("RetrieveDeviceNode", e.getMessage());
                         }
                     }
                 });
@@ -187,6 +250,8 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
                     return album1.getArtist().getName().toLowerCase().compareTo(album2.getArtist().getName().toLowerCase());
                 }
             });
+            // TODO: a rm
+            //SharedPreferencesTools.putAlbumsListToSharedPreferences(albums, this.getApplicationContext());
             final PutDataMapRequest dataMapRequest = PutDataMapRequest.create(DATA_ITEM_PATH);
             for (final Album album : albums) {
                 AssetTools.OnBitmapLoaded onBitmapLoaded = new AssetTools.OnBitmapLoaded() {
@@ -195,7 +260,7 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
                         try {
                             DataMap dataMap = dataMapRequest.getDataMap();
                             dataMap.putAsset(DEEZER_JSON_ARRAY, AssetTools.getAssetFromJsonObject(JSONTools.generateAlbumJson(album.toJson())));
-                            dataMap.putLong("timestamp", System.currentTimeMillis());
+                            dataMap.putLong(TIMESTAMP, System.currentTimeMillis());
                             dataMap.putAsset(DEEZER_JSON_ALBUM_SMALL_COVER, asset);
                             PutDataRequest request = dataMapRequest.asPutDataRequest();
                             request.setUrgent();
@@ -210,5 +275,9 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
         } else {
             Log.e("GoogleApiClient", "No connection to a wearable available.");
         }
+    }
+
+    public interface OnDataRetrieved {
+        void onDataRetrieved();
     }
 }
