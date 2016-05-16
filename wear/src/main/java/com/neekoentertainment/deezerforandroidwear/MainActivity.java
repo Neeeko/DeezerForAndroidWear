@@ -10,7 +10,6 @@ import android.support.annotation.NonNull;
 import android.support.v4.content.LocalBroadcastManager;
 import android.support.wearable.activity.WearableActivity;
 import android.support.wearable.view.WearableListView;
-import android.text.method.ScrollingMovementMethod;
 import android.util.Base64;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -25,19 +24,15 @@ import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.NodeApi;
 import com.google.android.gms.wearable.Wearable;
+import com.neekoentertainment.deezerforandroidwear.database.DeezerWearDataHandler;
 import com.neekoentertainment.deezerforandroidwear.listener.ListenerService;
+import com.neekoentertainment.deezerforandroidwear.models.LikedAlbum;
 import com.neekoentertainment.deezerforandroidwear.tools.BitmapTools;
 import com.neekoentertainment.deezerforandroidwear.tools.GoogleApiTools;
 
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -47,8 +42,10 @@ import java.util.List;
 public class MainActivity extends WearableActivity {
     public static final String DEEZER_DATA_WATCH_REQUEST = "deezer_data_watch_request";
     public static final String DEEZER_DATA_WATCH_UPDATE = "deezer_data_watch_update";
-    public static final String ALBUM_DATA_FILENAME = "/album_data.dd";
-    public static final String ALBUM_COVER_FILENAME = "/album_cover.dd";
+    public static final String JSONOBJECT_KEY_ID = "id";
+    public static final String JSONOBJECT_KEY_ARTIST = "artist";
+    public static final String JSONOBJECT_KEY_TITLE = "title";
+    public static final String JSONOBJECT_KEY_COVER = "cover";
     private WearableListView mListView;
     private DataReceiver mDataReceiver;
     private AlbumAdapter mAlbumAdapter;
@@ -56,11 +53,15 @@ public class MainActivity extends WearableActivity {
     private int mAlbumsAmount;
     private int mReceivedAlbumsAmount = 1;
     private boolean alreadySaved = false;
+    private DeezerWearDataHandler mDeezerWearDataHandler;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        mDeezerWearDataHandler = new DeezerWearDataHandler(this);
+        mDeezerWearDataHandler.open();
         mGoogleApiClient = GoogleApiTools.getGoogleApiClient(this);
         requestConnectedUserAlbums();
         mListView = (WearableListView) findViewById(R.id.album_list);
@@ -69,13 +70,12 @@ public class MainActivity extends WearableActivity {
         mListView.addOnScrollListener(new WearableListView.OnScrollListener() {
             @Override
             public void onScroll(int i) {
-
+                header.setY(header.getY() - i);
             }
 
             @Override
             public void onAbsoluteScrollChange(int i) {
-                float newTranslation = Math.min(-i, 0);
-                header.setTranslationY(newTranslation);
+
             }
 
             @Override
@@ -85,20 +85,25 @@ public class MainActivity extends WearableActivity {
 
             @Override
             public void onCentralPositionChanged(int i) {
-
+                mListView.getChildAt(i).setSelected(true);
+            }
+        });
+        mListView.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean hasFocus) {
+                v.setSelected(true);
             }
         });
         mListView.setAdapter(mAlbumAdapter);
         if (areDataFileUpToDate()) {
-            retrieveDataFromFiles();
+            retrieveDataFromDatabase();
         }
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        final JSONArray mAlbumsJsonArray = new JSONArray();
-        final JSONArray mAlbumsCoverJsonArray = new JSONArray();
+        final List<JSONObject> mAlbumsList = new ArrayList<>();
         if (mGoogleApiClient != null)
             mGoogleApiClient.connect();
         if (!alreadySaved) {
@@ -110,14 +115,13 @@ public class MainActivity extends WearableActivity {
                     mAlbumAdapter.notifyDataSetChanged();
                     mReceivedAlbumsAmount++;
                     try {
-                        mAlbumsJsonArray.put(jsonObject);
-                        mAlbumsCoverJsonArray.put(Base64.encodeToString(BitmapTools.getByteArrayFromBitmap(albumCover), Base64.DEFAULT));
-                    } catch (IOException e) {
+                        jsonObject.put(JSONOBJECT_KEY_COVER, Base64.encodeToString(BitmapTools.getByteArrayFromBitmap(albumCover), Base64.DEFAULT));
+                        mAlbumsList.add(jsonObject);
+                    } catch (IOException | JSONException e) {
                         Log.e("AlbumAdapter", e.getMessage());
                     }
                     if (mReceivedAlbumsAmount == mAlbumsAmount) {
-                        saveAlbumToFile(ALBUM_DATA_FILENAME, mAlbumsJsonArray);
-                        saveAlbumToFile(ALBUM_COVER_FILENAME, mAlbumsCoverJsonArray);
+                        saveAlbumsToDatabase(mAlbumsList);
                     }
                 }
 
@@ -134,35 +138,34 @@ public class MainActivity extends WearableActivity {
         }
     }
 
-    private JSONArray getAlbumsFromFile(String fileName) {
-        JSONArray albums = new JSONArray();
-        File albumData = new File(getApplicationContext().getExternalCacheDir(), fileName);
-        try {
-            BufferedReader bufferedReader = new BufferedReader(new FileReader(albumData));
-            String line = bufferedReader.readLine(); // Only one line
-            albums = new JSONArray(line);
-            bufferedReader.close();
-        } catch (IOException | JSONException e) {
-            Log.e("MainActivity", e.getMessage());
+    @Override
+    protected void onPause() {
+        if (mDeezerWearDataHandler != null) {
+            mDeezerWearDataHandler.close();
         }
-        return albums;
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        if (mDeezerWearDataHandler != null) {
+            mDeezerWearDataHandler.open();
+        }
+        super.onResume();
     }
 
     private boolean areDataFileUpToDate() {
-        File albumData = new File(getApplicationContext().getExternalCacheDir(), ALBUM_DATA_FILENAME);
-        File coverData = new File(getApplicationContext().getExternalCacheDir(), ALBUM_DATA_FILENAME);
-        return albumData.length() > 0 && coverData.length() > 0;
+        long amountLikedAlbums = mDeezerWearDataHandler.getAmountLikedAlbums();
+        return amountLikedAlbums > 0;
     }
 
-    private void saveAlbumToFile(String fileName, JSONArray album) {
-        try {
-            File file = new File(getApplicationContext().getExternalCacheDir(), fileName);
-            BufferedWriter outputStream = new BufferedWriter(new FileWriter(file, true));
-            outputStream.write(album.toString());
-            outputStream.flush();
-            outputStream.close();
-        } catch (IOException e) {
-            Log.e("MainActivity", e.getMessage());
+    private void saveAlbumsToDatabase(List<JSONObject> albums) {
+        for (JSONObject album : albums) {
+            try {
+                mDeezerWearDataHandler.createLikedAlbum(album);
+            } catch (JSONException e) {
+                Log.e("MainActivity", e.getMessage());
+            }
         }
     }
 
@@ -184,15 +187,13 @@ public class MainActivity extends WearableActivity {
         });
     }
 
-    private void retrieveDataFromFiles() {
+    private void retrieveDataFromDatabase() {
         alreadySaved = true;
-        JSONArray albums = getAlbumsFromFile(ALBUM_DATA_FILENAME);
-        JSONArray covers = getAlbumsFromFile(ALBUM_COVER_FILENAME);
-        for (int i = 0; i < albums.length(); i++) {
+        List<LikedAlbum> likedAlbumsList = mDeezerWearDataHandler.getAllLikedAlbums();
+        for (LikedAlbum likedAlbum : likedAlbumsList) {
             try {
-                byte[] byteArray = Base64.decode(covers.getString(i), Base64.DEFAULT);
-                Bitmap albumCover = BitmapTools.getBitmapFromByteArray(byteArray);
-                mAlbumAdapter.addAlbum(albums.getJSONObject(i), albumCover);
+                Bitmap albumCover = BitmapTools.getBitmapFromByteArray(likedAlbum.getAlbumCover());
+                mAlbumAdapter.addAlbum(likedAlbum.toJSONObject(), albumCover);
                 mAlbumAdapter.notifyDataSetChanged();
             } catch (JSONException e) {
                 Log.e("MainActivity", e.getMessage());
@@ -272,7 +273,7 @@ public class MainActivity extends WearableActivity {
                 @Override
                 public int compare(JSONObject album1, JSONObject album2) {
                     try {
-                        return album1.getString("artist").toLowerCase().compareTo(album2.getString("artist").toLowerCase());
+                        return album1.getString(JSONOBJECT_KEY_ARTIST).toLowerCase().compareTo(album2.getString(JSONOBJECT_KEY_ARTIST).toLowerCase());
                     } catch (JSONException e) {
                         Log.e("AlbumAdapter", e.getMessage());
                     }
@@ -299,10 +300,8 @@ public class MainActivity extends WearableActivity {
             JSONObject album;
             try {
                 album = mAlbumList.get(position);
-                albumName.setMovementMethod(new ScrollingMovementMethod());
-                albumName.setText(album.getString("title"));
-                artistName.setMovementMethod(new ScrollingMovementMethod());
-                artistName.setText(album.getString("artist"));
+                albumName.setText(album.getString(JSONOBJECT_KEY_TITLE));
+                artistName.setText(album.getString(JSONOBJECT_KEY_ARTIST));
                 albumCover.setImageBitmap(mCoverList.get(position));
             } catch (JSONException e) {
                 Log.e("AlbumAdapter", e.getMessage());

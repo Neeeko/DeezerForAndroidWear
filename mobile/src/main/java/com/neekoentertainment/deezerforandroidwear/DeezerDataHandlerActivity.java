@@ -21,7 +21,7 @@ import com.google.android.gms.wearable.NodeApi;
 import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
-import com.neekoentertainment.deezerforandroidwear.database.DeezerDataHandler;
+import com.neekoentertainment.deezerforandroidwear.database.DeezerPhoneDataHandler;
 import com.neekoentertainment.deezerforandroidwear.listener.ListenerService;
 import com.neekoentertainment.deezerforandroidwear.tools.AssetTools;
 import com.neekoentertainment.deezerforandroidwear.tools.JSONTools;
@@ -57,7 +57,7 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
 
     private DeezerConnect mDeezerConnect;
 
-    private DeezerDataHandler mDeezerDataHandler;
+    private DeezerPhoneDataHandler mDeezerPhoneDataHandler;
     private List<Album> mAlbumList;
 
     @Override
@@ -78,16 +78,16 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
 
     @Override
     protected void onPause() {
-        if (mDeezerDataHandler != null) {
-            mDeezerDataHandler.close();
+        if (mDeezerPhoneDataHandler != null) {
+            mDeezerPhoneDataHandler.close();
         }
         super.onPause();
     }
 
     @Override
     protected void onResume() {
-        if (mDeezerDataHandler != null) {
-            mDeezerDataHandler.open();
+        if (mDeezerPhoneDataHandler != null) {
+            mDeezerPhoneDataHandler.open();
         }
         super.onResume();
     }
@@ -105,8 +105,8 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
     private void init(final String requestedContent) {
         mAlbumList = new ArrayList<>();
         mImageLoader = ImageLoader.getInstance();
-        mDeezerDataHandler = new DeezerDataHandler(this);
-        mDeezerDataHandler.open();
+        mDeezerPhoneDataHandler = new DeezerPhoneDataHandler(this);
+        mDeezerPhoneDataHandler.open();
         mImageLoader.init(ImageLoaderConfiguration.createDefault(getApplicationContext()));
         mGoogleApiClient = ServicesAuthentication.getGoogleApiClient(this);
         ServicesAuthentication.DeezerConnection mCallback = new ServicesAuthentication.DeezerConnection() {
@@ -119,7 +119,7 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
                             @Override
                             public void onDataRetrieved() {
                                 for (Album album : mAlbumList) {
-                                    mDeezerDataHandler.createLikedAlbum(album);
+                                    mDeezerPhoneDataHandler.createLikedAlbum(album);
                                 }
                                 Wearable.NodeApi.getConnectedNodes(mGoogleApiClient).setResultCallback(new ResultCallback<NodeApi.GetConnectedNodesResult>() {
                                     @Override
@@ -203,7 +203,7 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
                     deezerIdList.add(album.getId());
                 }
                 Collections.sort(deezerIdList);
-                List<Long> likedAlbumsList = mDeezerDataHandler.getAllLikedAlbumsId();
+                List<Long> likedAlbumsList = mDeezerPhoneDataHandler.getAllLikedAlbumsId();
 
                 //List<Long> tmpList = likedAlbumsList;
                 //tmpList.removeAll(deezerIdList);

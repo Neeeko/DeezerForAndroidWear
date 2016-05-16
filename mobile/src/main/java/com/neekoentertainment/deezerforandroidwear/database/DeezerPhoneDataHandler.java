@@ -15,42 +15,42 @@ import java.util.List;
 /**
  * Created by Nicolas on 4/24/2016.
  */
-public class DeezerDataHandler {
+public class DeezerPhoneDataHandler {
 
     private static final String EQUAL = " = ";
     private SQLiteDatabase mSQLiteDatabase;
-    private DeezerDatabaseHelper mDeezerDatabaseHelper;
+    private DeezerPhoneDatabaseHelper mDeezerPhoneDatabaseHelper;
     private String[] allColumns = {
-            DeezerContract.UserLikedAlbums.COLUMN_NAME_ALBUM_ID,
-            DeezerContract.UserLikedAlbums.COLUMN_NAME_ALBUM_TITLE,
-            DeezerContract.UserLikedAlbums.COLUMN_NAME_ALBUM_COVER_SMALL,
-            DeezerContract.UserLikedAlbums.COLUMN_NAME_ALBUM_ARTIST_ID,
-            DeezerContract.UserLikedAlbums.COLUMN_NAME_ARTIST_NAME,
-            DeezerContract.UserLikedAlbums.COLUMN_NAME_ARTIST_PICTURE_SMALL
+            DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ALBUM_ID,
+            DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ALBUM_TITLE,
+            DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ALBUM_COVER,
+            DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ALBUM_ARTIST_ID,
+            DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ARTIST_NAME,
+            DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ARTIST_PICTURE
     };
 
-    public DeezerDataHandler(Context context) {
-        mDeezerDatabaseHelper = DeezerDatabaseHelper.getInstance(context);
+    public DeezerPhoneDataHandler(Context context) {
+        mDeezerPhoneDatabaseHelper = DeezerPhoneDatabaseHelper.getInstance(context);
     }
 
     public void open() throws SQLException {
-        mSQLiteDatabase = mDeezerDatabaseHelper.getWritableDatabase();
+        mSQLiteDatabase = mDeezerPhoneDatabaseHelper.getWritableDatabase();
     }
 
     public void close() {
-        mDeezerDatabaseHelper.close();
+        mDeezerPhoneDatabaseHelper.close();
     }
 
     public LikedAlbum createLikedAlbum(Album album) {
         ContentValues values = new ContentValues();
-        values.put(DeezerContract.UserLikedAlbums.COLUMN_NAME_ALBUM_ID, album.getId());
-        values.put(DeezerContract.UserLikedAlbums.COLUMN_NAME_ALBUM_TITLE, album.getTitle());
-        values.put(DeezerContract.UserLikedAlbums.COLUMN_NAME_ALBUM_COVER_SMALL, album.getSmallImageUrl());
-        values.put(DeezerContract.UserLikedAlbums.COLUMN_NAME_ALBUM_ARTIST_ID, album.getArtist().getId());
-        values.put(DeezerContract.UserLikedAlbums.COLUMN_NAME_ARTIST_NAME, album.getArtist().getName());
-        values.put(DeezerContract.UserLikedAlbums.COLUMN_NAME_ARTIST_PICTURE_SMALL, album.getArtist().getSmallImageUrl());
-        long insertId = mSQLiteDatabase.insert(DeezerContract.UserLikedAlbums.TABLE_NAME, null, values);
-        Cursor cursor = mSQLiteDatabase.query(DeezerContract.UserLikedAlbums.TABLE_NAME, allColumns, DeezerContract.UserLikedAlbums._ID
+        values.put(DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ALBUM_ID, album.getId());
+        values.put(DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ALBUM_TITLE, album.getTitle());
+        values.put(DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ALBUM_COVER, album.getSmallImageUrl());
+        values.put(DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ALBUM_ARTIST_ID, album.getArtist().getId());
+        values.put(DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ARTIST_NAME, album.getArtist().getName());
+        values.put(DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ARTIST_PICTURE, album.getArtist().getSmallImageUrl());
+        long insertId = mSQLiteDatabase.insert(DeezerPhoneContract.UserLikedAlbumsPhone.TABLE_NAME, null, values);
+        Cursor cursor = mSQLiteDatabase.query(DeezerPhoneContract.UserLikedAlbumsPhone.TABLE_NAME, allColumns, DeezerPhoneContract.UserLikedAlbumsPhone._ID
                 + EQUAL + insertId, null, null, null, null);
         cursor.moveToFirst();
         LikedAlbum likedAlbum = cursorToLikeAlbum(cursor);
@@ -60,12 +60,12 @@ public class DeezerDataHandler {
 
     public void deleteLikedAlbum(Album album) {
         long id = album.getId();
-        mSQLiteDatabase.delete(DeezerContract.UserLikedAlbums.TABLE_NAME, DeezerContract.UserLikedAlbums._ID + EQUAL + id, null);
+        mSQLiteDatabase.delete(DeezerPhoneContract.UserLikedAlbumsPhone.TABLE_NAME, DeezerPhoneContract.UserLikedAlbumsPhone.COLUMN_NAME_ALBUM_ID + EQUAL + id, null);
     }
 
     public List<LikedAlbum> getAllLikedAlbums() {
         List<LikedAlbum> likedAlbumsList = new ArrayList<>();
-        Cursor cursor = mSQLiteDatabase.query(DeezerContract.UserLikedAlbums.TABLE_NAME, allColumns, null, null, null, null, null);
+        Cursor cursor = mSQLiteDatabase.query(DeezerPhoneContract.UserLikedAlbumsPhone.TABLE_NAME, allColumns, null, null, null, null, null);
         cursor.moveToFirst();
         while (!cursor.isAfterLast()) {
             LikedAlbum likedAlbum = cursorToLikeAlbum(cursor);
@@ -78,8 +78,7 @@ public class DeezerDataHandler {
 
     public List<Long> getAllLikedAlbumsId() {
         List<Long> likedAlbumsIdList = new ArrayList<>();
-        String[] idColumn = {DeezerContract.UserLikedAlbums.COLUMN_NAME_ALBUM_ID};
-        Cursor cursor = mSQLiteDatabase.query(DeezerContract.UserLikedAlbums.TABLE_NAME, allColumns, null, null, null, null, null);
+        Cursor cursor = mSQLiteDatabase.query(DeezerPhoneContract.UserLikedAlbumsPhone.TABLE_NAME, allColumns, null, null, null, null, null);
         cursor.moveToFirst();
         while (!cursor.isAfterLast()) {
             Long likedAlbumId = cursor.getLong(0);
