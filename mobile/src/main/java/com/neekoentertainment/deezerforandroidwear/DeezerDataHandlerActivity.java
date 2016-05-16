@@ -250,8 +250,6 @@ public class DeezerDataHandlerActivity extends AppCompatActivity {
                     return album1.getArtist().getName().toLowerCase().compareTo(album2.getArtist().getName().toLowerCase());
                 }
             });
-            // TODO: a rm
-            //SharedPreferencesTools.putAlbumsListToSharedPreferences(albums, this.getApplicationContext());
             final PutDataMapRequest dataMapRequest = PutDataMapRequest.create(DATA_ITEM_PATH);
             for (final Album album : albums) {
                 AssetTools.OnBitmapLoaded onBitmapLoaded = new AssetTools.OnBitmapLoaded() {
